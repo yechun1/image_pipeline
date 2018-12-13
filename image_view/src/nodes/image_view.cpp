@@ -31,40 +31,47 @@
 *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 *  POSSIBILITY OF SUCH DAMAGE.
 *********************************************************************/
+#include <rclcpp/rclcpp.hpp>
+#include <image_transport/image_transport.h>
+#include <rcutils/cmdline_parser.h>
 
-#include "rclcpp/rclcpp.hpp"
-
-#include "image_transport/image_transport.h"
-#include "rcutils/cmdline_parser.h"
-#include "cv_bridge/cv_bridge.h"
+#include <cv_bridge/cv_bridge.h>
 #include <opencv2/highgui/highgui.hpp>
 
 #include <thread>
-#include <exception> 
+#include <exception>
 #include <memory>
 #include <string>
 #include <iostream>
 
-// TODO: filesystem is not a part of the libc++ in macOS yet, 
-// so as long as it move to macOS, we will enable this function ASAP.
-// see: https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dynamic_or_shared.html#manual.intro.using.linkage.experimental
-// #include <experimental/filesystem>
-
-rclcpp::Node::SharedPtr node;
 int g_count;
 cv::Mat g_last_image;
+std::string g_filename_format;
 std::mutex g_image_mutex;
 std::string g_window_name;
-std::string transport;
-std::string topic;
-char buf[1024];
 bool g_gui;
-image_transport::Publisher g_pub;
+rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr g_pub;
 bool g_do_dynamic_scaling;
 int g_colormap;
 double g_min_image_value;
 double g_max_image_value;
-std::string format_string;
+
+struct ImageViewConfig {
+  bool do_dynamic_scaling;
+  int colormap;
+  double min_image_value;
+  double max_image_value;
+};
+
+void reconfigureCb(ImageViewConfig config)
+{
+  std::unique_lock<std::mutex> lock(g_image_mutex);
+  g_do_dynamic_scaling = config.do_dynamic_scaling;
+  g_colormap = config.colormap;
+  g_min_image_value = config.min_image_value;
+  g_max_image_value = config.max_image_value;
+}
+
 void imageCb(const sensor_msgs::msg::Image::ConstSharedPtr & msg)
 {
   std::unique_lock<std::mutex> lock(g_image_mutex);
@@ -93,22 +100,27 @@ void imageCb(const sensor_msgs::msg::Image::ConstSharedPtr & msg)
     cv_ptr = cv_bridge::cvtColorForDisplay(cv_bridge::toCvShare(msg), "", options);
     g_last_image = cv_ptr->image;
   } catch (cv_bridge::Exception& e) {
-    RCLCPP_ERROR(node->get_logger(), "Unable to convert '%s' image for display: '%s'",
+    RCUTILS_LOG_ERROR_THROTTLE(30, "Unable to convert '%s' image for display: '%s'",
                        msg->encoding.c_str(), e.what());
   }
   if (g_gui && !g_last_image.empty()) {
     const cv::Mat &image = g_last_image;
     cv::imshow(g_window_name, image);
+    // TODO(yechun1): issues#201: Attempt to unlock mutex that was not locked
+    // ref to pull#343: https://github.com/ros-perception/image_pipeline/pull/343
+    // cv::waitKey(3);
   }
-  if (g_pub.getNumSubscribers() > 0) {
-    g_pub.publish(cv_ptr->toImageMsg());
+  // TODO(ros2) add support when rcl/rmw support it.
+  //if (g_pub.getNumSubscribers() > 0) {
+  if (1) {
+    g_pub->publish(cv_ptr->toImageMsg());
   }
 }
 
 static void mouseCb(int event, int x, int y, int flags, void* param)
 {
   if (event == cv::EVENT_LBUTTONDOWN) {
-    RCLCPP_WARN_ONCE(node->get_logger(), "Left-clicking no longer saves images. Right-click instead.");
+    RCUTILS_LOG_WARN_ONCE("Left-clicking no longer saves images. Right-click instead.");
     return;
   } else if (event != cv::EVENT_RBUTTONDOWN) {
     return;
@@ -119,45 +131,49 @@ static void mouseCb(int event, int x, int y, int flags, void* param)
   const cv::Mat &image = g_last_image;
 
   if (image.empty()) {
-    RCLCPP_WARN(node->get_logger(), "Couldn't save image, no data!");
+    RCUTILS_LOG_WARN("Couldn't save image, no data!");
     return;
   }
-  sprintf(buf, format_string.c_str(), g_count);
+
+  char buf[1024];
+  snprintf(buf, sizeof(buf), g_filename_format.c_str(), g_count);
   std::string filename = buf;
   if (cv::imwrite(filename, image)) {
-    RCLCPP_INFO(node->get_logger(), "Saved image %s", filename.c_str());
+    RCUTILS_LOG_INFO("Saved image %s", filename.c_str());
     g_count++;
   } else {
-    // std::experimental::filesystem::path full_path = 
-    //   std::experimental::filesystem::system_complete(filename);
-    // TODO: filesystem is not a part of the libc++ in macOS yet, so as long as it move to macOS, we will enable this function ASAP.
-    RCLCPP_ERROR(node->get_logger(), "Failed to save image. Have permission to write there?: %s", filename.c_str());
+    RCUTILS_LOG_ERROR("Failed to save image. Have permission to write to current execution path?");
   }
 }
 
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
-  transport = "raw";
-  if (rcutils_cli_option_exist(argv, argv + argc, "--topic")){
-    topic = std::string(rcutils_cli_get_option(argv, argv + argc, "--topic"));
+  std::string topic;
+  if (rcutils_cli_option_exist(argv, argv + argc, "--image")){
+    topic = std::string(rcutils_cli_get_option(argv, argv + argc, "--image"));
+  } else {
+    RCUTILS_LOG_WARN("Topic 'image' has not been provided! Typical command-line usage:\n"
+      "\t$ ros2 run image_view image_view --image <image topic> --image_transport <image transport>");
+    return 0;
   }
-  if (rcutils_cli_option_exist(argv, argv + argc, "--transport")){
-    transport = std::string(rcutils_cli_get_option(argv, argv + argc, "--transport"));
-  }
-  // auto topic = std::string("/camera/color/image_raw");
+
+  rclcpp::Node::SharedPtr node;
   node = rclcpp::Node::make_shared("image_view");
+
+  // Handle transport
+  std::string transport;
+  node->get_parameter_or("image_transport", transport, std::string("raw"));
+  if (rcutils_cli_option_exist(argv, argv + argc, "--image_transport")){
+    transport = std::string(rcutils_cli_get_option(argv, argv + argc, "--image_transport"));
+  }
+
   // Default window name is the resolved topic name
   node->get_parameter_or("window_name", g_window_name, topic);
   node->get_parameter_or("gui", g_gui, true);  // gui/no_gui mode
-  node->get_parameter_or("max_image_value", g_max_image_value, 0.0);
-  node->get_parameter_or("min_image_value", g_min_image_value, 0.0);  
-  node->get_parameter_or("colormap", g_colormap, 11);
-  node->get_parameter_or("do_dynamic_scaling", g_do_dynamic_scaling, false);
-  if (g_gui) {
-    node->get_parameter_or("filename_format", format_string, std::string("frame%04i.jpg"));
-    
 
+  if (g_gui) {
+    node->get_parameter_or("filename_format", g_filename_format, std::string("frame%04i.jpg"));
     // Handle window size
     bool autosize;
     node->get_parameter_or("autosize", autosize, false);
@@ -174,26 +190,34 @@ int main(int argc, char **argv)
         cv::resizeWindow(g_window_name, width, height);
       }
     }
-
     // Start the OpenCV window thread so we don't have to waitKey() somewhere
     cv::startWindowThread();
   }
 
-  // Handle transport
-  // priority:
-  //    1. command line argument
-  //    2. rosparam '~image_transport'
-  RCLCPP_INFO(node->get_logger(), "Using transport \"%s\"", transport.c_str());
-  RCLCPP_INFO(node->get_logger(), "Image topic \"%s\"", topic.c_str());
+  RCUTILS_LOG_INFO("Using transport \"%s\"", transport.c_str());
   image_transport::Subscriber sub;
-  sub = image_transport::create_subscription(node.get(), 
-    topic, &imageCb, transport);
-  g_pub = image_transport::create_publisher(node.get(), "output");
-  rclcpp::spin(node);
+  sub = image_transport::create_subscription(node.get(), topic, &imageCb, transport);
+  g_pub = node->create_publisher<sensor_msgs::msg::Image>("output");
 
+  // TODO(yechun1): ROS dynatic_reconfigure not work on ROS2, set the default value once
+  // dynamic_reconfigure::Server<image_view::ImageViewConfig> srv;
+  // dynamic_reconfigure::Server<image_view::ImageViewConfig>::CallbackType f =
+  //   boost::bind(&reconfigureCb, _1, _2);
+  // srv.setCallback(f);
+  ImageViewConfig config;
+  node->get_parameter_or("do_dynamic_scaling", config.do_dynamic_scaling, false);
+  node->get_parameter_or("colormap", config.colormap, 0);
+  node->get_parameter_or("min_image_value", config.min_image_value, 0.0);
+  node->get_parameter_or("max_image_value", config.max_image_value, 0.0);
+  reconfigureCb(config);
+  // TODO(yechun1): ROS dynatic_reconfigure not work on ROS2, set the default value once
+
+  rclcpp::spin(node);
   rclcpp::shutdown();
+
   if (g_gui) {
     cv::destroyWindow(g_window_name);
   }
+
   return 0;
 }

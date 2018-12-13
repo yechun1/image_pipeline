@@ -61,8 +61,8 @@ install(TARGETS ${PROJECT_NAME}
         DESTINATION lib
 )
 
-add_executable(image_view_exe 
-               src/nodes/image_view.cpp)
+add_executable(image_view_exe src/nodes/image_view.cpp)
+SET_TARGET_PROPERTIES(image_view_exe PROPERTIES OUTPUT_NAME image_view)
 ament_target_dependencies(image_view_exe
   image_transport
   image_geometry
@@ -73,9 +73,12 @@ ament_target_dependencies(image_view_exe
   stereo_msgs
   sensor_msgs
   rmw_implementation
+  camera_calibration_parsers
   cv_bridge
   OpenCV
-  Boost
+)
+install(TARGETS image_view_exe
+        DESTINATION bin
 )
 
 add_executable(stereo_view src/nodes/stereo_view.cpp)
@@ -91,7 +94,6 @@ ament_target_dependencies(stereo_view
   rmw_implementation
   cv_bridge
   OpenCV
-  Boost
 )
 
 add_executable(extract_images src/nodes/extract_images.cpp)
