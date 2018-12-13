@@ -37,12 +37,12 @@
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
 #include "rcutils/cmdline_parser.h"
-// #include <camera_calibration_parsers/parse.h>
+#include <camera_calibration_parsers/parse.h>
 
 #include <memory>
 #include <string>
 #include <vector>
-
+#include <stdio.h>
 #include <std_srvs/srv/empty.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <rcutils/cmdline_parser.h>
@@ -59,8 +59,6 @@ bool service(const std::shared_ptr<std_srvs::srv::Empty::Request> req, std::shar
   return true;
 }
 
-/** Class to deal with which callback to call whether we have CameraInfo or not
- */
 class Callbacks {
 public:
   Callbacks() : is_first_image_(true), has_camera_info_(false), count_(0) {
@@ -140,10 +138,10 @@ public:
       return;
 
     // save the CameraInfo
-    // if (info) {
-    //   filename = filename.replace(filename.rfind("."), filename.length(), ".ini");
-    //   camera_calibration_parsers::writeCalibration(filename, "camera", *info);
-    // }
+    if (info) {
+      filename = filename.replace(filename.rfind("."), filename.length(), ".ini");
+      camera_calibration_parsers::writeCalibration(filename, "camera", *info);
+    }
 
     count_++;
   }
@@ -151,7 +149,6 @@ private:
   bool saveImage(const sensor_msgs::msg::Image::ConstSharedPtr& image_msg,
                  std::string & filename) 
   {
-    // printf("start saving! \n");
     cv::Mat image;
     try
     {
@@ -162,19 +159,8 @@ private:
       RCLCPP_ERROR(node->get_logger(), "Unable to convert %s image to %s", image_msg->encoding.c_str(), encoding.c_str());
       return false;
     }
-
     if (!image.empty()) {
-      try {
-        filename = format_string;
-      } catch (...) { format_string.clear(); }
-      try {
-        sprintf(buf, format_string.c_str(), count_);
-        filename = buf;
-      } catch (...) { format_string.clear(); }
-      try { 
-        sprintf(buf, format_string.c_str(), count_, "jpg");
-        filename = buf; 
-      } catch (...) { format_string.clear(); }
+        filename = format_string + std::to_string(count_) + std::string(".jpg"); 
       if ( save_all_image || save_image_service ) {
         cv::imwrite(filename, image);
         RCLCPP_INFO(node->get_logger(), "Saved image %s", filename.c_str());
@@ -199,9 +185,8 @@ private:
 
 int main(int argc, char** argv)
 {
-  // ros::init(argc, argv, "image_saver", ros::init_options::AnonymousName);  
   std::string topic = "image";
-  std::string format_string = std::string("left%04i.%s");
+  format_string = std::string("frame");
   std::string encoding = "bgr8";
   bool request_start_end = false;
   save_all_image = true;

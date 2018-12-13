@@ -29,6 +29,7 @@ find_package(OpenCV REQUIRED)
 find_package(GTK2)
 find_package(std_srvs REQUIRED)
 find_package(rcutils)
+find_package(camera_calibration_parsers)
 add_definitions(-DHAVE_GTK)
 include_directories(${GTK2_INCLUDE_DIRS})
 
@@ -114,6 +115,7 @@ ament_target_dependencies(image_saver
   image_transport
   image_geometry
   cv_bridge
+  camera_calibration_parsers
   std_srvs
   message_filters
   rclcpp
