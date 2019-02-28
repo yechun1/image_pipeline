@@ -31,16 +31,17 @@
 *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 *  POSSIBILITY OF SUCH DAMAGE.
 *********************************************************************/
-#include <ros/assert.h>
+//#include <ros/assert.h>
 #include "stereo_image_proc/processor.h"
-#include <sensor_msgs/image_encodings.h>
+//#include <sensor_msgs/image_encodings.h>
+#include <sensor_msgs/image_encodings.hpp>
 #include <cmath>
 #include <limits>
 
 namespace stereo_image_proc {
 
-bool StereoProcessor::process(const sensor_msgs::ImageConstPtr& left_raw,
-                              const sensor_msgs::ImageConstPtr& right_raw,
+bool StereoProcessor::process(const sensor_msgs::msg::Image::ConstSharedPtr& left_raw,
+                              const sensor_msgs::msg::Image::ConstSharedPtr& right_raw,
                               const image_geometry::StereoCameraModel& model,
                               StereoImageSet& output, int flags) const
 {
@@ -101,7 +102,7 @@ void StereoProcessor::processDisparity(const cv::Mat& left_rect, const cv::Mat& 
 #endif
 
   // Fill in DisparityImage image data, converting to 32-bit float
-  sensor_msgs::Image& dimage = disparity.image;
+  sensor_msgs::msg::Image& dimage = disparity.image;
   dimage.height = disparity16_.rows;
   dimage.width = disparity16_.cols;
   dimage.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
@@ -136,10 +137,10 @@ inline bool isValidPoint(const cv::Vec3f& pt)
 void StereoProcessor::processPoints(const stereo_msgs::DisparityImage& disparity,
                                     const cv::Mat& color, const std::string& encoding,
                                     const image_geometry::StereoCameraModel& model,
-                                    sensor_msgs::PointCloud& points) const
+                                    sensor_msgs::msg::PointCloud& points) const
 {
   // Calculate dense point cloud
-  const sensor_msgs::Image& dimage = disparity.image;
+  const sensor_msgs::msg::Image& dimage = disparity.image;
   const cv::Mat_<float> dmat(dimage.height, dimage.width, (float*)&dimage.data[0], dimage.step);
   model.projectDisparityImageTo3d(dmat, dense_points_, true);
 
@@ -213,10 +214,10 @@ void StereoProcessor::processPoints(const stereo_msgs::DisparityImage& disparity
 void StereoProcessor::processPoints2(const stereo_msgs::DisparityImage& disparity,
                                      const cv::Mat& color, const std::string& encoding,
                                      const image_geometry::StereoCameraModel& model,
-                                     sensor_msgs::PointCloud2& points) const
+                                     sensor_msgs::msg::PointCloud2& points) const
 {
   // Calculate dense point cloud
-  const sensor_msgs::Image& dimage = disparity.image;
+  const sensor_msgs::msg::Image& dimage = disparity.image;
   const cv::Mat_<float> dmat(dimage.height, dimage.width, (float*)&dimage.data[0], dimage.step);
   model.projectDisparityImageTo3d(dmat, dense_points_, true);
 

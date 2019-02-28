@@ -36,9 +36,9 @@
 
 #include <image_proc/processor.h>
 #include <image_geometry/stereo_camera_model.h>
-#include <stereo_msgs/DisparityImage.h>
-#include <sensor_msgs/PointCloud.h>
-#include <sensor_msgs/PointCloud2.h>
+#include <stereo_msgs/msg/disparity_image.hpp>
+//#include <sensor_msgs/PointCloud.h>
+//#include <sensor_msgs/PointCloud2.h>
 
 namespace stereo_image_proc {
 
@@ -46,9 +46,9 @@ struct StereoImageSet
 {
   image_proc::ImageSet left;
   image_proc::ImageSet right;
-  stereo_msgs::DisparityImage disparity;
-  sensor_msgs::PointCloud points;
-  sensor_msgs::PointCloud2 points2;
+  stereo_msgs::msg::DisparityImage disparity;
+  sensor_msgs::msg::PointCloud points;
+  sensor_msgs::msg::PointCloud2 points2;
 };
 
 class StereoProcessor
@@ -153,13 +153,13 @@ public:
 
   void processDisparity(const cv::Mat& left_rect, const cv::Mat& right_rect,
                         const image_geometry::StereoCameraModel& model,
-                        stereo_msgs::DisparityImage& disparity) const;
+                        stereo_msgs::msg::DisparityImage& disparity) const;
 
-  void processPoints(const stereo_msgs::DisparityImage& disparity,
+  void processPoints(const stereo_msgs::msg::DisparityImage& disparity,
                      const cv::Mat& color, const std::string& encoding,
                      const image_geometry::StereoCameraModel& model,
                      sensor_msgs::PointCloud& points) const;
-  void processPoints2(const stereo_msgs::DisparityImage& disparity,
+  void processPoints2(const stereo_msgs::msg::DisparityImage& disparity,
                       const cv::Mat& color, const std::string& encoding,
                       const image_geometry::StereoCameraModel& model,
                       sensor_msgs::PointCloud2& points) const;

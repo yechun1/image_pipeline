@@ -32,10 +32,12 @@
 *  POSSIBILITY OF SUCH DAMAGE.
 *********************************************************************/
 
-#include <ros/ros.h>
-#include <nodelet/loader.h>
-#include <image_proc/advertisement_checker.h>
+//#include <rclcpp/rclcpp.hpp>
+//#include <image_proc/advertisement_checker.h>
+#include "stereo_image_proc/disparity.hpp"
+#include "stereo_image_proc/point_cloud2.hpp"
 
+/*
 void loadMonocularNodelets(nodelet::Loader& manager, const std::string& side,
                            const XmlRpc::XmlRpcValue& rectify_params,
                            const nodelet::V_string& my_argv)
@@ -79,38 +81,24 @@ void loadMonocularNodelets(nodelet::Loader& manager, const std::string& side,
     ros::param::set(rectify_color_name, rectify_params);
   manager.load(rectify_color_name, "image_proc/rectify", remappings, my_argv);
 }
+*/
 
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "stereo_image_proc");
+  // Force flush of the stdout buffer.
+  setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+
+  rclcpp::init(argc, argv);
 
   // Check for common user errors
-  if (ros::names::remap("camera") != "camera")
-  {
-    ROS_WARN("Remapping 'camera' has no effect! Start stereo_image_proc in the "
-             "stereo namespace instead.\nExample command-line usage:\n"
-             "\t$ ROS_NAMESPACE=%s rosrun stereo_image_proc stereo_image_proc",
-             ros::names::remap("camera").c_str());
-  }
-  if (ros::this_node::getNamespace() == "/")
-  {
-    ROS_WARN("Started in the global namespace! This is probably wrong. Start "
-             "stereo_image_proc in the stereo namespace.\nExample command-line usage:\n"
-             "\t$ ROS_NAMESPACE=my_stereo rosrun stereo_image_proc stereo_image_proc");
-  }
+  if (argc <= 1) {
+    RCUTILS_LOG_WARN("Example command-line usage:\n"
+      "\t$ ros2 run stereo_image_proc stereo_image_proc");
 
-  // Shared parameters to be propagated to nodelet private namespaces
-  ros::NodeHandle private_nh("~");
-  XmlRpc::XmlRpcValue shared_params;
-  int queue_size;
-  if (private_nh.getParam("queue_size", queue_size))
-    shared_params["queue_size"] = queue_size;
-
-  nodelet::Loader manager(false); // Don't bring up the manager ROS API
-  nodelet::M_string remappings;
-  nodelet::V_string my_argv;
+  //  shared_params["queue_size"] = queue_size;
 
   // Load equivalents of image_proc for left and right cameras
+/*
   loadMonocularNodelets(manager, "left",  shared_params, my_argv);
   loadMonocularNodelets(manager, "right", shared_params, my_argv);
 
@@ -118,32 +106,37 @@ int main(int argc, char **argv)
   bool approx_sync;
   if (private_nh.getParam("approximate_sync", approx_sync))
     shared_params["approximate_sync"] = XmlRpc::XmlRpcValue(approx_sync);
+*/
 
   // Disparity nodelet
   // Inputs: left/image_rect, left/camera_info, right/image_rect, right/camera_info
   // Outputs: disparity
   // NOTE: Using node name for the disparity nodelet because it is the only one using
   // dynamic_reconfigure so far, and this makes us backwards-compatible with cturtle.
-  std::string disparity_name = ros::this_node::getName();
-  manager.load(disparity_name, "stereo_image_proc/disparity", remappings, my_argv);
+  // std::string disparity_name = ros::this_node::getName();
+  // manager.load(disparity_name, "stereo_image_proc/disparity", remappings, my_argv);
+  auto disparity = std::make_shared<stereo_image_proc::DisparityNode>();
 
   // PointCloud2 nodelet
   // Inputs: left/image_rect_color, left/camera_info, right/camera_info, disparity
   // Outputs: points2
-  std::string point_cloud2_name = ros::this_node::getName() + "_point_cloud2";
+/*
   if (shared_params.valid())
     ros::param::set(point_cloud2_name, shared_params);
   manager.load(point_cloud2_name, "stereo_image_proc/point_cloud2", remappings, my_argv);
+*/
 
-  // Check for only the original camera topics
-  ros::V_string topics;
-  topics.push_back(ros::names::resolve("left/image_raw"));
-  topics.push_back(ros::names::resolve("left/camera_info"));
-  topics.push_back(ros::names::resolve("right/image_raw"));
-  topics.push_back(ros::names::resolve("right/camera_info"));
-  image_proc::AdvertisementChecker check_inputs(ros::NodeHandle(), ros::this_node::getName());
-  check_inputs.start(topics, 60.0);
+  auto point_cloud2 = std::make_shared<stereo_image_proc::PointCloud2Node>();
+//  // Check for only the original camera topics
+//  ros::V_string topics;
+//  topics.push_back(ros::names::resolve("left/image_raw"));
+//  topics.push_back(ros::names::resolve("left/camera_info"));
+//  topics.push_back(ros::names::resolve("right/image_raw"));
+//  topics.push_back(ros::names::resolve("right/camera_info"));
+//  image_proc::AdvertisementChecker check_inputs(ros::NodeHandle(), ros::this_node::getName());
+//  check_inputs.start(topics, 60.0);
 
-  ros::spin();
+  rclcpp::spin(point_cloud2);
+  rclcpp::shutdown();
   return 0;
 }
